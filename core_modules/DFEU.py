@@ -5,15 +5,15 @@ class DFEU(nn.Module):
     def __init__(self, dim, n_div=4, drop=0.):
         super().__init__()
         self.dim = dim
-        self.n_div = n_div  # 恢复通道拆分比例参数
-        self.split_dim = dim // n_div  # 计算需要处理的通道数（1/n_div）
+        self.n_div = n_div  # Parameter for channel splitting ratio restoration
+        self.split_dim = dim // n_div  # Calculate the number of channels to process (1/n_div)
         
-        # 路径1：仅对1/n_div的通道做特征提取
-        self.pconv = nn.Conv2d(self.split_dim, self.split_dim, kernel_size=1)  # 只处理部分通道
+        # Path 1: Feature extraction only on 1/n_div channels
+        self.pconv = nn.Conv2d(self.split_dim, self.split_dim, kernel_size=1)  # Only process partial channels
         self.relu = nn.ReLU(inplace=True)
         self.conv1x1 = nn.Conv2d(self.split_dim, self.split_dim, kernel_size=1)
         
-        # 路径2：注意力权重生成（仅对处理的通道生成权重）
+        # Path 2: Attention weight generation (only for processed channels)
         self.gap = nn.AdaptiveAvgPool2d(1)
         self.linear = nn.Sequential(
             nn.Linear(self.split_dim, self.split_dim),
@@ -23,11 +23,11 @@ class DFEU(nn.Module):
         self.drop = nn.Dropout(drop)
 
     def forward(self, x):
-        F_in = x  # 原始输入
+        F_in = x  # Original input
 
         x_process, x_remain = torch.split(x, [self.split_dim, self.dim - self.split_dim], dim=1)
         
-        # 步骤2：对1/n_div通道做特征提取
+        # Step 2: Feature extraction on 1/n_div channels
         F = self.pconv(x_process)
         F = self.relu(F)
         F = self.conv1x1(F)
@@ -62,7 +62,7 @@ class DFEUBlock(nn.Module):
 
         self.adjust_channel = None
         if inc != dim:
-            self.adjust_channel = nn.Conv2d(inc, dim, kernel_size=1)  # 简化版Conv，无BN/Act
+            self.adjust_channel = nn.Conv2d(inc, dim, kernel_size=1)  # Simplified Conv without BN/Act
         
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         
