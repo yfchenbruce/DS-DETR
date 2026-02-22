@@ -81,9 +81,9 @@ class DRblock(nn.Module):
 class DRM(nn.Module):
     def __init__(self, c1, c2):
         super().__init__()
-        # 分支1：直接 1x1 卷积
+
         self.branch1 = nn.Conv2d(c1, c2, kernel_size=1)
-        # 分支2：1x1 卷积 → DRblock堆叠 → 1x1 卷积
+
         self.branch2_conv1x1 = nn.Conv2d(c1, c2, kernel_size=1)
         self.dr_blocks = nn.Sequential(
             DRblock(c2, c2),
@@ -93,13 +93,9 @@ class DRM(nn.Module):
         self.branch2_conv1x1_out = nn.Conv2d(c2, c2, kernel_size=1)
 
     def forward(self, x):
-        # 输入特征图
-        # 分支1
         x1 = self.branch1(x)
-        # 分支2
         x2 = self.branch2_conv1x1(x)
         x2 = self.dr_blocks(x2)
         x2 = self.branch2_conv1x1_out(x2)
-        # 两个分支相加输出
         out = x1 + x2
         return out
