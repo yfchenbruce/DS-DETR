@@ -5,10 +5,8 @@ import torch.nn.functional as F
 from einops import rearrange, repeat
 from timm.layers import DropPath, to_2tuple, trunc_normal_
 
-__all__ = ['ASA', 'TransformerEncoderLayer_ASA']
-
 class LayerNorm(nn.Module):
-    """ LayerNorm 支持channels_first（适配B×C×H×W输入）"""
+    """ LayerNorm supporting channels_first (adapted for B×C×H×W input) """
     def __init__(self, normalized_shape, eps=1e-6, data_format="channels_first"):
         super().__init__()
         self.weight = nn.Parameter(torch.ones(normalized_shape))
@@ -28,7 +26,7 @@ class LayerNorm(nn.Module):
             return x
 
 class LinearProjection(nn.Module):
-    """ 注意力QKV线性投影，ASA的核心依赖 """
+    """ Linear projection for attention QKV, core dependency of ASA """
     def __init__(self, dim, heads = 8, dim_head = 64, dropout = 0., bias=True):
         super().__init__()
         inner_dim = dim_head *  heads
@@ -52,7 +50,7 @@ class LinearProjection(nn.Module):
         return q,k,v
 
 class WindowAttention(nn.Module):
-    """ 基础窗口注意力，ASA的依赖 """
+    """ Basic window attention, dependency of ASA """
     def __init__(self, dim, win_size,num_heads, token_projection='linear', qkv_bias=True, qk_scale=None, attn_drop=0., proj_drop=0.):
         super().__init__()
         self.dim = dim
@@ -61,7 +59,7 @@ class WindowAttention(nn.Module):
         head_dim = dim // num_heads
         self.scale = qk_scale or head_dim ** -0.5
 
-        # 相对位置偏置
+        # Relative position bias
         self.relative_position_bias_table = nn.Parameter(
             torch.zeros((2 * win_size[0] - 1) * (2 * win_size[1] - 1), num_heads))
         coords_h = torch.arange(self.win_size[0])
@@ -112,7 +110,7 @@ class WindowAttention(nn.Module):
         return x
 
 class WindowAttention_sparse(nn.Module):
-    """ 稀疏窗口注意力，ASA的核心 """
+    """ Sparse window attention, core component of ASA """
     def __init__(self, dim, win_size,num_heads, token_projection='linear', qkv_bias=True, qk_scale=None, attn_drop=0., proj_drop=0.):
         super().__init__()
         self.dim = dim
@@ -121,7 +119,7 @@ class WindowAttention_sparse(nn.Module):
         head_dim = dim // num_heads
         self.scale = qk_scale or head_dim ** -0.5
 
-        # 相对位置偏置
+        # Relative position bias
         self.relative_position_bias_table = nn.Parameter(
             torch.zeros((2 * win_size[0] - 1) * (2 * win_size[1] - 1), num_heads))
         coords_h = torch.arange(self.win_size[0])
@@ -202,7 +200,7 @@ def window_reverse(windows, win_size, H, W, dilation_rate=1):
     return x
 
 class ASA(nn.Module):
-    """ 核心注意力模块 """
+    """ Core attention module """
     def __init__(self, dim, num_heads, sparseAtt=False, win_size=4, shift_size=2,
                  mlp_ratio=4., qkv_bias=True, qk_scale=None, drop=0., attn_drop=0., drop_path=0.,
                  act_layer=nn.GELU, norm_layer=nn.LayerNorm,token_projection='linear',token_mlp='frfn',att=True):
@@ -274,18 +272,18 @@ class ASA(nn.Module):
             x = self.norm1(x)
             x = x.view(B, H, W, C)
 
-            # 循环移位
+            # Cyclic shift
             if self.shift_size > 0:
                 shifted_x = torch.roll(x, shifts=(-self.shift_size, -self.shift_size), dims=(1, 2))
             else:
                 shifted_x = x
 
-            # 窗口分割+注意力计算
+            # Window partition + attention calculation
             x_windows = window_partition(shifted_x, self.win_size)
             x_windows = x_windows.view(-1, self.win_size * self.win_size, C)
             attn_windows = self.attn(x_windows, mask=attn_mask)
 
-            # 窗口合并+移位还原
+            # Window merging + shift restoration
             attn_windows = attn_windows.view(-1, self.win_size, self.win_size, C)
             shifted_x = window_reverse(attn_windows, self.win_size, H, W)
             if self.shift_size > 0:
@@ -318,11 +316,11 @@ class TransformerEncoderLayer_ASA(nn.Module):
 
     def forward_post(self, src, src_mask=None, src_key_padding_mask=None, pos=None):
         BS, C, H, W = src.size()
-        # 注意力分支
+        # Attention branch
         src2 = self.assa(src).permute(0, 2, 1).view([-1, C, H, W]).contiguous()
         src = src + self.dropout1(src2)
         src = self.norm1(src)
-        # FFN分支
+        # FFN branch
         src2 = self.fc2(self.dropout(self.act(self.fc1(src))))
         src = src + self.dropout2(src2)
         return self.norm2(src)
